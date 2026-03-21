@@ -21,6 +21,11 @@ export interface ExtractedTerminalContexts {
   contexts: ParsedTerminalContextEntry[];
 }
 
+export interface ExtractedTerminalContextSelections {
+  promptText: string;
+  contexts: TerminalContextSelection[];
+}
+
 export interface DisplayedUserMessageState {
   visibleText: string;
   copyText: string;
@@ -234,6 +239,16 @@ export function extractTrailingTerminalContexts(prompt: string): ExtractedTermin
   };
 }
 
+export function extractTrailingTerminalContextSelections(
+  prompt: string,
+): ExtractedTerminalContextSelections {
+  const extractedContexts = extractTrailingTerminalContexts(prompt);
+  return {
+    promptText: extractedContexts.promptText,
+    contexts: parseTerminalContextSelections(extractedContexts.contexts),
+  };
+}
+
 export function deriveDisplayedUserMessageState(prompt: string): DisplayedUserMessageState {
   const extractedContexts = extractTrailingTerminalContexts(prompt);
   return {
@@ -284,6 +299,43 @@ function parseTerminalContextEntries(block: string): ParsedTerminalContextEntry[
 
   commitCurrent();
   return entries;
+}
+
+function parseTerminalContextSelections(
+  entries: ReadonlyArray<ParsedTerminalContextEntry>,
+): TerminalContextSelection[] {
+  return entries.flatMap((entry) => {
+    const headerMatch = /^(.*) (line|lines) (\d+)(?:-(\d+))?$/.exec(entry.header);
+    if (!headerMatch) {
+      return [];
+    }
+
+    const terminalLabel = headerMatch[1]?.trim() ?? "";
+    const lineStart = Number.parseInt(headerMatch[3] ?? "", 10);
+    const lineEnd = Number.parseInt(headerMatch[4] ?? headerMatch[3] ?? "", 10);
+    if (terminalLabel.length === 0 || Number.isNaN(lineStart) || Number.isNaN(lineEnd)) {
+      return [];
+    }
+
+    const text = entry.body
+      .split("\n")
+      .map((line) => {
+        if (line.length === 0) {
+          return "";
+        }
+        const bodyLineMatch = /^(\d+) \| ?(.*)$/.exec(line);
+        return bodyLineMatch?.[2] ?? line;
+      })
+      .join("\n");
+    const normalized = normalizeTerminalContextSelection({
+      terminalId: terminalLabel.trim().toLowerCase().replace(/\s+/g, "-"),
+      terminalLabel,
+      lineStart,
+      lineEnd,
+      text,
+    });
+    return normalized ? [normalized] : [];
+  });
 }
 
 export function countInlineTerminalContextPlaceholders(prompt: string): number {

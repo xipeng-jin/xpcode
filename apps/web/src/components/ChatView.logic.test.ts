@@ -1,18 +1,24 @@
 import { scopeThreadRef } from "@t3tools/client-runtime";
 import { EnvironmentId, ProjectId, ThreadId, TurnId } from "@t3tools/contracts";
+import { Schema } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type EnvironmentState, useStore } from "../store";
 import { type Thread } from "../types";
+import { appendTerminalContextsToPrompt } from "../lib/terminalContext";
 
 import {
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
+  REVERT_COMPOSER_DRAFT_BY_MESSAGE_ID_KEY,
   buildExpiredTerminalContextToastCopy,
   createLocalDispatchSnapshot,
+  deriveRestorableComposerDraft,
   deriveComposerSendState,
   hasServerAcknowledgedLocalDispatch,
   reconcileMountedTerminalThreadIds,
   resolveSendEnvMode,
+  RevertComposerDraftByMessageIdSchema,
   shouldWriteThreadErrorToCurrentServerThread,
+  upsertRevertComposerDraftSnapshot,
   waitForStartedServerThread,
 } from "./ChatView.logic";
 
@@ -91,6 +97,157 @@ describe("resolveSendEnvMode", () => {
   it("forces local mode for non-git repositories", () => {
     expect(resolveSendEnvMode({ requestedEnvMode: "worktree", isGitRepo: false })).toBe("local");
     expect(resolveSendEnvMode({ requestedEnvMode: "local", isGitRepo: false })).toBe("local");
+  });
+});
+
+describe("deriveRestorableComposerDraft", () => {
+  it("prefers the cached raw draft over transformed message text", () => {
+    const restored = deriveRestorableComposerDraft({
+      message: {
+        id: "message-1" as never,
+        role: "user",
+        text: "Ultrathink:\nInvestigate",
+        attachments: [
+          {
+            id: "attachment-1",
+            type: "image",
+            name: "diagram.png",
+            mimeType: "image/png",
+            sizeBytes: 12,
+            previewUrl: "/attachments/attachment-1",
+          },
+        ],
+        createdAt: "2026-04-21T12:00:00.000Z",
+        streaming: false,
+      },
+      savedDraft: {
+        prompt: "Investigate",
+        attachments: [
+          {
+            id: "attachment-1",
+            name: "diagram.png",
+            mimeType: "image/png",
+            sizeBytes: 12,
+            dataUrl: "data:image/png;base64,AA==",
+          },
+        ],
+        terminalContexts: [
+          {
+            id: "context-1",
+            threadId: ThreadId.make("thread-stale"),
+            terminalId: "default",
+            terminalLabel: "Terminal 1",
+            lineStart: 4,
+            lineEnd: 5,
+            text: "git status\nOn branch local-build",
+            createdAt: "2026-04-21T12:00:00.000Z",
+          },
+        ],
+      },
+      currentThreadId: ThreadId.make("thread-1"),
+      imageOnlyBootstrapPrompt:
+        "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]",
+    });
+
+    expect(restored.prompt).toBe("Investigate");
+    expect(restored.attachments).toHaveLength(1);
+    expect(restored.terminalContexts).toEqual([
+      {
+        id: "context-1",
+        threadId: ThreadId.make("thread-1"),
+        terminalId: "default",
+        terminalLabel: "Terminal 1",
+        lineStart: 4,
+        lineEnd: 5,
+        text: "git status\nOn branch local-build",
+        createdAt: "2026-04-21T12:00:00.000Z",
+      },
+    ]);
+  });
+
+  it("falls back to an empty prompt for older image-only sends", () => {
+    const restored = deriveRestorableComposerDraft({
+      message: {
+        id: "message-2" as never,
+        role: "user",
+        text: "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]",
+        attachments: [
+          {
+            id: "attachment-1",
+            type: "image",
+            name: "diagram.png",
+            mimeType: "image/png",
+            sizeBytes: 12,
+            previewUrl: "/attachments/attachment-1",
+          },
+        ],
+        createdAt: "2026-04-21T12:00:00.000Z",
+        streaming: false,
+      },
+      savedDraft: null,
+      currentThreadId: ThreadId.make("thread-1"),
+      imageOnlyBootstrapPrompt:
+        "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]",
+    });
+
+    expect(restored.prompt).toBe("");
+    expect(restored.attachments).toEqual([]);
+    expect(restored.terminalContexts).toEqual([]);
+  });
+
+  it("reconstructs terminal contexts from the stored user message when no snapshot exists", () => {
+    const restored = deriveRestorableComposerDraft({
+      message: {
+        id: "message-3" as never,
+        role: "user",
+        text: appendTerminalContextsToPrompt("Investigate this", [
+          {
+            terminalId: "default",
+            terminalLabel: "Terminal 1",
+            lineStart: 12,
+            lineEnd: 13,
+            text: "git status\nOn branch main",
+          },
+        ]),
+        createdAt: "2026-04-21T12:00:00.000Z",
+        streaming: false,
+      },
+      savedDraft: null,
+      currentThreadId: ThreadId.make("thread-1"),
+      imageOnlyBootstrapPrompt:
+        "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]",
+    });
+
+    expect(restored.prompt).toBe("Investigate this");
+    expect(restored.terminalContexts).toEqual([
+      {
+        id: "restored-message-3-0",
+        threadId: ThreadId.make("thread-1"),
+        terminalId: "terminal-1",
+        terminalLabel: "Terminal 1",
+        lineStart: 12,
+        lineEnd: 13,
+        text: "git status\nOn branch main",
+        createdAt: "2026-04-21T12:00:00.000Z",
+      },
+    ]);
+  });
+});
+
+describe("upsertRevertComposerDraftSnapshot", () => {
+  it("stores replayable drafts under the local-storage schema", () => {
+    const snapshots = upsertRevertComposerDraftSnapshot({}, "message-1" as never, {
+      prompt: "Investigate",
+      attachments: [],
+      terminalContexts: [],
+    });
+
+    expect(() =>
+      Schema.decodeSync(RevertComposerDraftByMessageIdSchema)(snapshots),
+    ).not.toThrow();
+    expect(REVERT_COMPOSER_DRAFT_BY_MESSAGE_ID_KEY).toBe(
+      "t3code:revert-composer-draft-by-message-id",
+    );
   });
 });
 

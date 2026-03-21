@@ -123,6 +123,7 @@ import { buildDraftThreadRouteParams } from "../threadRoutes";
 import {
   type ComposerImageAttachment,
   type DraftThreadEnvMode,
+  hydrateComposerImagesFromPersistedAttachments,
   useComposerDraftStore,
   type DraftId,
 } from "../composerDraftStore";
@@ -149,12 +150,15 @@ import {
   buildLocalDraftThread,
   collectUserMessageBlobPreviewUrls,
   createLocalDispatchSnapshot,
+  deriveRestorableComposerDraft,
   deriveComposerSendState,
   hasServerAcknowledgedLocalDispatch,
   LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
   LastInvokedScriptByProjectSchema,
   type LocalDispatchSnapshot,
   PullRequestDialogState,
+  REVERT_COMPOSER_DRAFT_BY_MESSAGE_ID_KEY,
+  RevertComposerDraftByMessageIdSchema,
   cloneComposerImageForRetry,
   deriveLockedProvider,
   readFileAsDataUrl,
@@ -163,6 +167,7 @@ import {
   revokeBlobPreviewUrl,
   revokeUserMessagePreviewUrls,
   shouldWriteThreadErrorToCurrentServerThread,
+  upsertRevertComposerDraftSnapshot,
   waitForStartedServerThread,
 } from "./ChatView.logic";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
@@ -705,8 +710,15 @@ export default function ChatView(props: ChatViewProps) {
     {},
     LastInvokedScriptByProjectSchema,
   );
+  const [revertComposerDraftByMessageId, setRevertComposerDraftByMessageId] = useLocalStorage(
+    REVERT_COMPOSER_DRAFT_BY_MESSAGE_ID_KEY,
+    {},
+    RevertComposerDraftByMessageIdSchema,
+  );
   const legendListRef = useRef<LegendListRef | null>(null);
   const isAtEndRef = useRef(true);
+  const routeThreadKeyRef = useRef(routeThreadKey);
+  routeThreadKeyRef.current = routeThreadKey;
   const attachmentPreviewHandoffByMessageIdRef = useRef<Record<string, string[]>>({});
   const attachmentPreviewPromotionInFlightByMessageIdRef = useRef<Record<string, true>>({});
   const sendInFlightRef = useRef(false);
@@ -2315,8 +2327,67 @@ export default function ChatView(props: ChatViewProps) {
     toggleTerminalVisibility,
   ]);
 
+  const restoreRevertedComposerDraft = useCallback(
+    (messageId: MessageId) => {
+      if (!activeThread) {
+        return;
+      }
+
+      const userMessage = timelineMessages.find(
+        (message) => message.id === messageId && message.role === "user",
+      );
+      if (!userMessage) {
+        return;
+      }
+
+      const restoredDraft = deriveRestorableComposerDraft({
+        message: userMessage,
+        savedDraft: revertComposerDraftByMessageId[messageId],
+        currentThreadId: activeThread.id,
+        imageOnlyBootstrapPrompt: IMAGE_ONLY_BOOTSTRAP_PROMPT,
+      });
+      const expectedRouteThreadKey = routeThreadKey;
+
+      window.setTimeout(() => {
+        if (routeThreadKeyRef.current !== expectedRouteThreadKey) {
+          return;
+        }
+
+        const restoredImages = hydrateComposerImagesFromPersistedAttachments(
+          restoredDraft.attachments,
+        );
+        promptRef.current = restoredDraft.prompt;
+        composerImagesRef.current = restoredImages;
+        composerTerminalContextsRef.current = restoredDraft.terminalContexts;
+        clearComposerDraftContent(composerDraftTarget);
+        setComposerDraftPrompt(composerDraftTarget, restoredDraft.prompt);
+        if (restoredImages.length > 0) {
+          addComposerDraftImages(composerDraftTarget, restoredImages);
+        }
+        setComposerDraftTerminalContexts(composerDraftTarget, restoredDraft.terminalContexts);
+        composerRef.current?.resetCursorState({
+          cursor: collapseExpandedComposerCursor(restoredDraft.prompt, restoredDraft.prompt.length),
+          prompt: restoredDraft.prompt,
+        });
+        scheduleComposerFocus();
+      }, 300);
+    },
+    [
+      activeThread,
+      addComposerDraftImages,
+      clearComposerDraftContent,
+      composerDraftTarget,
+      revertComposerDraftByMessageId,
+      routeThreadKey,
+      scheduleComposerFocus,
+      setComposerDraftPrompt,
+      setComposerDraftTerminalContexts,
+      timelineMessages,
+    ],
+  );
+
   const onRevertToTurnCount = useCallback(
-    async (turnCount: number) => {
+    async (turnCount: number, messageIdToRestore?: MessageId) => {
       const api = readEnvironmentApi(environmentId);
       const localApi = readLocalApi();
       if (!api || !localApi || !activeThread || isRevertingCheckpoint) return;
@@ -2338,6 +2409,7 @@ export default function ChatView(props: ChatViewProps) {
 
       setIsRevertingCheckpoint(true);
       setThreadError(activeThread.id, null);
+      let reverted = false;
       try {
         await api.orchestration.dispatchCommand({
           type: "thread.checkpoint.revert",
@@ -2346,6 +2418,7 @@ export default function ChatView(props: ChatViewProps) {
           turnCount,
           createdAt: new Date().toISOString(),
         });
+        reverted = true;
       } catch (err) {
         setThreadError(
           activeThread.id,
@@ -2353,6 +2426,10 @@ export default function ChatView(props: ChatViewProps) {
         );
       }
       setIsRevertingCheckpoint(false);
+
+      if (reverted && messageIdToRestore) {
+        restoreRevertedComposerDraft(messageIdToRestore);
+      }
     },
     [
       activeThread,
@@ -2361,6 +2438,7 @@ export default function ChatView(props: ChatViewProps) {
       isRevertingCheckpoint,
       isSendBusy,
       phase,
+      restoreRevertedComposerDraft,
       setThreadError,
     ],
   );
@@ -2575,6 +2653,19 @@ export default function ChatView(props: ChatViewProps) {
       }
 
       const turnAttachments = await turnAttachmentsPromise;
+      setRevertComposerDraftByMessageId((existing) =>
+        upsertRevertComposerDraftSnapshot(existing, messageIdForSend, {
+          prompt: promptForSend,
+          attachments: turnAttachments.map((attachment, index) => ({
+            id: composerImagesSnapshot[index]?.id ?? `restored-${index}`,
+            name: attachment.name,
+            mimeType: attachment.mimeType,
+            sizeBytes: attachment.sizeBytes,
+            dataUrl: attachment.dataUrl,
+          })),
+          terminalContexts: composerTerminalContextsSnapshot,
+        }),
+      );
       const bootstrap =
         isLocalDraftThread || baseBranchForWorktree
           ? {
@@ -3179,7 +3270,7 @@ export default function ChatView(props: ChatViewProps) {
     if (typeof targetTurnCount !== "number") {
       return;
     }
-    void onRevertToTurnCountRef.current(targetTurnCount);
+    void onRevertToTurnCountRef.current(targetTurnCount, messageId);
   }, []);
 
   // Empty state: no active thread
