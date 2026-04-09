@@ -147,6 +147,7 @@ import {
   LastInvokedScriptByProjectSchema,
   type LocalDispatchSnapshot,
   PullRequestDialogState,
+  cloneComposerImageForRetry,
   readFileAsDataUrl,
   reconcileMountedTerminalThreadIds,
   revokeBlobPreviewUrl,
@@ -1871,11 +1872,6 @@ export default function ChatView(props: ChatViewProps) {
   const toggleInteractionMode = useCallback(() => {
     handleInteractionModeChange(interactionMode === "plan" ? "default" : "plan");
   }, [handleInteractionModeChange, interactionMode]);
-  const toggleRuntimeMode = useCallback(() => {
-    void handleRuntimeModeChange(
-      runtimeMode === "full-access" ? "approval-required" : "full-access",
-    );
-  }, [handleRuntimeModeChange, runtimeMode]);
   const togglePlanSidebar = useCallback(() => {
     setPlanSidebarOpen((open) => {
       if (open) {
@@ -2694,10 +2690,11 @@ export default function ChatView(props: ChatViewProps) {
           return next.length === existing.length ? existing : next;
         });
         promptRef.current = promptForSend;
-        composerImagesRef.current = composerImagesSnapshot;
+        const retryComposerImages = composerImagesSnapshot.map(cloneComposerImageForRetry);
+        composerImagesRef.current = retryComposerImages;
         composerTerminalContextsRef.current = composerTerminalContextsSnapshot;
         setComposerDraftPrompt(composerDraftTarget, promptForSend);
-        addComposerDraftImages(composerDraftTarget, composerImagesSnapshot);
+        addComposerDraftImages(composerDraftTarget, retryComposerImages);
         setComposerDraftTerminalContexts(composerDraftTarget, composerTerminalContextsSnapshot);
         composerRef.current?.resetCursorState({ cursor: promptForSend.length });
       }
@@ -2830,7 +2827,7 @@ export default function ChatView(props: ChatViewProps) {
       questionId: string,
       value: string,
       nextCursor: number,
-      _expandedCursor: number,
+      expandedCursor: number,
       _cursorAdjacentToMention: boolean,
     ) => {
       if (!activePendingUserInput) {
@@ -2847,7 +2844,14 @@ export default function ChatView(props: ChatViewProps) {
           ),
         },
       }));
-      composerRef.current?.resetCursorState({ cursor: nextCursor });
+      const snapshot = composerRef.current?.readSnapshot();
+      if (
+        snapshot?.value !== value ||
+        snapshot.cursor !== nextCursor ||
+        snapshot.expandedCursor !== expandedCursor
+      ) {
+        composerRef.current?.focusAt(nextCursor);
+      }
     },
     [activePendingUserInput],
   );
@@ -3410,7 +3414,6 @@ export default function ChatView(props: ChatViewProps) {
               }
               onProviderModelSelect={onProviderModelSelect}
               toggleInteractionMode={toggleInteractionMode}
-              toggleRuntimeMode={toggleRuntimeMode}
               handleRuntimeModeChange={handleRuntimeModeChange}
               handleInteractionModeChange={handleInteractionModeChange}
               togglePlanSidebar={togglePlanSidebar}

@@ -39,7 +39,7 @@ import {
   expandCollapsedComposerCursor,
   replaceTextRange,
 } from "../../composer-logic";
-import { deriveComposerSendState, readFileAsDataUrl } from "../ChatView.logic";
+import { deriveComposerSendState, readFileAsDataUrl, threadHasStarted } from "../ChatView.logic";
 import {
   type ComposerImageAttachment,
   type DraftId,
@@ -283,7 +283,6 @@ export interface ChatComposerProps {
 
   onProviderModelSelect: (provider: ProviderKind, model: string) => void;
   toggleInteractionMode: () => void;
-  toggleRuntimeMode: () => void;
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
   handleInteractionModeChange: (mode: ProviderInteractionMode) => void;
   togglePlanSidebar: () => void;
@@ -354,7 +353,6 @@ export const ChatComposer = memo(
       onChangeActivePendingUserInputCustomAnswer,
       onProviderModelSelect,
       toggleInteractionMode,
-      toggleRuntimeMode: _toggleRuntimeMode,
       handleRuntimeModeChange,
       handleInteractionModeChange,
       togglePlanSidebar,
@@ -400,9 +398,7 @@ export const ChatComposer = memo(
     const selectedProviderByThreadId = composerDraft.activeProvider ?? null;
     const threadProvider =
       activeThreadModelSelection?.provider ?? activeProjectDefaultModelSelection?.provider ?? null;
-    const hasThreadStarted = activeThread
-      ? (activeThread.messages?.length ?? 0) > 0 || activeThread.session !== null
-      : false;
+    const hasThreadStarted = threadHasStarted(activeThread);
     const sessionProvider = activeThread?.session?.provider ?? null;
     const computedLockedProvider: ProviderKind | null = hasThreadStarted
       ? (sessionProvider ?? threadProvider ?? selectedProviderByThreadId ?? null)
@@ -639,6 +635,7 @@ export const ChatComposer = memo(
     );
 
     const isComposerApprovalState = activePendingApproval !== null;
+    const activePendingUserInput = pendingUserInputs[0] ?? null;
     const hasComposerHeader =
       isComposerApprovalState ||
       pendingUserInputs.length > 0 ||
@@ -799,6 +796,51 @@ export const ChatComposer = memo(
           : (composerMenuItems[0]?.id ?? null),
       );
     }, [composerMenuItems, composerMenuOpen]);
+
+    const lastSyncedPendingInputRef = useRef<{
+      requestId: string | null;
+      questionId: string | null;
+    } | null>(null);
+
+    useEffect(() => {
+      const nextCustomAnswer = activePendingProgress?.customAnswer;
+      if (typeof nextCustomAnswer !== "string") {
+        lastSyncedPendingInputRef.current = null;
+        return;
+      }
+
+      const nextRequestId = activePendingUserInput?.requestId ?? null;
+      const nextQuestionId = activePendingProgress?.activeQuestion?.id ?? null;
+      const questionChanged =
+        lastSyncedPendingInputRef.current?.requestId !== nextRequestId ||
+        lastSyncedPendingInputRef.current?.questionId !== nextQuestionId;
+      const textChangedExternally = promptRef.current !== nextCustomAnswer;
+
+      lastSyncedPendingInputRef.current = {
+        requestId: nextRequestId,
+        questionId: nextQuestionId,
+      };
+
+      if (!questionChanged && !textChangedExternally) {
+        return;
+      }
+
+      promptRef.current = nextCustomAnswer;
+      const nextCursor = collapseExpandedComposerCursor(nextCustomAnswer, nextCustomAnswer.length);
+      setComposerCursor(nextCursor);
+      setComposerTrigger(
+        detectComposerTrigger(
+          nextCustomAnswer,
+          expandCollapsedComposerCursor(nextCustomAnswer, nextCursor),
+        ),
+      );
+      setComposerHighlightedItemId(null);
+    }, [
+      activePendingProgress?.customAnswer,
+      activePendingProgress?.activeQuestion?.id,
+      activePendingUserInput?.requestId,
+      promptRef,
+    ]);
 
     // ------------------------------------------------------------------
     // Reset compositor state on thread/draft change
@@ -965,6 +1007,10 @@ export const ChatComposer = memo(
         terminalContextIds: string[],
       ) => {
         if (activePendingProgress?.activeQuestion && pendingUserInputs.length > 0) {
+          setComposerCursor(nextCursor);
+          setComposerTrigger(
+            cursorAdjacentToMention ? null : detectComposerTrigger(nextPrompt, expandedCursor),
+          );
           onChangeActivePendingUserInputCustomAnswer(
             activePendingProgress.activeQuestion.id,
             nextPrompt,
@@ -1020,18 +1066,34 @@ export const ChatComposer = memo(
         }
         const next = replaceTextRange(promptRef.current, rangeStart, rangeEnd, replacement);
         const nextCursor = collapseExpandedComposerCursor(next.text, next.cursor);
+        const nextExpandedCursor = expandCollapsedComposerCursor(next.text, nextCursor);
         promptRef.current = next.text;
-        setPrompt(next.text);
+        const activePendingQuestion = activePendingProgress?.activeQuestion;
+        if (activePendingQuestion && activePendingUserInput) {
+          onChangeActivePendingUserInputCustomAnswer(
+            activePendingQuestion.id,
+            next.text,
+            nextCursor,
+            nextExpandedCursor,
+            false,
+          );
+        } else {
+          setPrompt(next.text);
+        }
         setComposerCursor(nextCursor);
-        setComposerTrigger(
-          detectComposerTrigger(next.text, expandCollapsedComposerCursor(next.text, nextCursor)),
-        );
+        setComposerTrigger(detectComposerTrigger(next.text, nextExpandedCursor));
         window.requestAnimationFrame(() => {
           composerEditorRef.current?.focusAt(nextCursor);
         });
         return true;
       },
-      [promptRef, setPrompt],
+      [
+        activePendingProgress?.activeQuestion,
+        activePendingUserInput,
+        onChangeActivePendingUserInputCustomAnswer,
+        promptRef,
+        setPrompt,
+      ],
     );
 
     const readComposerSnapshot = useCallback((): {
