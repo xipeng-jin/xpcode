@@ -26,6 +26,69 @@ export const desktopDir = resolve(__dirname, "..");
 const repoRoot = resolve(desktopDir, "..", "..");
 const defaultIconPath = join(desktopDir, "resources", "icon.icns");
 const developmentMacIconPngPath = join(repoRoot, "assets", "dev", "blueprint-macos-1024.png");
+const require = createRequire(import.meta.url);
+const electronPackageDir = dirname(require.resolve("electron/package.json"));
+
+function resolveElectronExecutablePath() {
+  const pathFile = join(electronPackageDir, "path.txt");
+  const overrideDistPath = process.env.ELECTRON_OVERRIDE_DIST_PATH;
+
+  let executablePath = overrideDistPath ? "electron" : null;
+  if (existsSync(pathFile)) {
+    const raw = readFileSync(pathFile, "utf8").trim();
+    if (raw) {
+      executablePath = raw;
+    }
+  }
+
+  if (!executablePath) {
+    return null;
+  }
+
+  const distDir = overrideDistPath || join(electronPackageDir, "dist");
+  const candidate = join(distDir, executablePath);
+  return existsSync(candidate) ? candidate : null;
+}
+
+function installElectronBinary() {
+  if (process.env.ELECTRON_SKIP_BINARY_DOWNLOAD) {
+    throw new Error(
+      "Electron binary is missing and ELECTRON_SKIP_BINARY_DOWNLOAD is set. Unset it and rerun `bun install` or `bun run start:desktop`.",
+    );
+  }
+
+  const result = spawnSync("node", ["install.js"], {
+    cwd: electronPackageDir,
+    stdio: "inherit",
+    env: process.env,
+  });
+
+  if (result.error) {
+    throw new Error(`Failed to launch Electron install script with node: ${result.error.message}`);
+  }
+
+  if (result.status !== 0) {
+    throw new Error(`Electron install script exited with code ${result.status ?? "unknown"}.`);
+  }
+}
+
+function ensureElectronPath() {
+  const resolved = resolveElectronExecutablePath();
+  if (resolved) {
+    return resolved;
+  }
+
+  installElectronBinary();
+
+  const installed = resolveElectronExecutablePath();
+  if (installed) {
+    return installed;
+  }
+
+  throw new Error(
+    "Electron install completed, but no runnable binary was found. Delete the Electron package directory and rerun `bun install`.",
+  );
+}
 
 function setPlistString(plistPath, key, value) {
   const replaceResult = spawnSync("plutil", ["-replace", key, "-string", value, plistPath], {
@@ -163,8 +226,7 @@ function buildMacLauncher(electronBinaryPath) {
 }
 
 export function resolveElectronPath() {
-  const require = createRequire(import.meta.url);
-  const electronBinaryPath = require("electron");
+  const electronBinaryPath = ensureElectronPath();
 
   if (process.platform !== "darwin") {
     return electronBinaryPath;

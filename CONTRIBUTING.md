@@ -63,3 +63,11 @@ Opening a PR does not create an obligation on our side.
 We may close it. We may ignore it. We may ask you to shrink it. We may reimplement the idea ourselves later.
 
 If you are fine with that, proceed.
+
+## Local Desktop Development Note
+
+The desktop app depends on the `electron` package's install script to download the local Electron runtime and write its generated `path.txt`.
+
+Keep `electron` in the root `trustedDependencies`. If that install step is skipped, `bun run start:desktop` can fail with `Electron failed to install correctly`.
+
+If you hit that state locally, rerun `bun install`.
