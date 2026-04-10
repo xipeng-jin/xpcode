@@ -229,7 +229,7 @@ describe("createEnvironmentConnection", () => {
   });
 
   it("retries replay recovery after transport disconnects during resubscribe", async () => {
-    const environmentId = EnvironmentId.makeUnsafe("env-1");
+    const environmentId = EnvironmentId.make("env-1");
     let replayAttempts = 0;
     const applyEventBatch = vi.fn();
     const { client, replayEvents, triggerDomainResubscribe } = createTestClient({
