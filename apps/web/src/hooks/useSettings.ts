@@ -290,6 +290,8 @@ export function migrateLocalSettingsToServer(): void {
   const raw = localStorage.getItem(OLD_SETTINGS_KEY);
   if (!raw) return;
 
+  let asyncMigrationStarted = false;
+
   try {
     const old = JSON.parse(raw);
     if (!Predicate.isObject(old)) return;
@@ -304,6 +306,7 @@ export function migrateLocalSettingsToServer(): void {
     // Migrate client-only keys to the new localStorage key
     const clientPatch = buildLegacyClientSettingsMigrationPatch(old);
     if (Object.keys(clientPatch).length > 0) {
+      asyncMigrationStarted = true;
       void (async () => {
         const current =
           (await ensureLocalApi().persistence.getClientSettings()) ?? DEFAULT_CLIENT_SETTINGS;
@@ -311,6 +314,7 @@ export function migrateLocalSettingsToServer(): void {
           ...current,
           ...clientPatch,
         });
+        localStorage.removeItem(OLD_SETTINGS_KEY);
       })().catch((error) => {
         console.error("[MIGRATION] Error persisting migrated client settings:", error);
       });
@@ -318,8 +322,9 @@ export function migrateLocalSettingsToServer(): void {
   } catch (error) {
     console.error("[MIGRATION] Error migrating local settings:", error);
   } finally {
-    // Remove the legacy key regardless to keep migration one-shot behavior.
-    localStorage.removeItem(OLD_SETTINGS_KEY);
+    if (!asyncMigrationStarted) {
+      localStorage.removeItem(OLD_SETTINGS_KEY);
+    }
   }
 }
 
