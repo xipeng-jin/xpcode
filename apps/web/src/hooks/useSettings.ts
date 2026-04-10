@@ -42,6 +42,7 @@ const CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE = "[CLIENT_SETTINGS]";
 
 const clientSettingsListeners = new Set<() => void>();
 let clientSettingsSnapshot = DEFAULT_CLIENT_SETTINGS;
+let clientSettingsHydrated = false;
 let clientSettingsHydrationPromise: Promise<void> | null = null;
 
 function emitClientSettingsChange() {
@@ -68,6 +69,9 @@ function subscribeClientSettings(listener: () => void): () => void {
 }
 
 async function hydrateClientSettings(): Promise<void> {
+  if (clientSettingsHydrated) {
+    return;
+  }
   if (clientSettingsHydrationPromise) {
     return clientSettingsHydrationPromise;
   }
@@ -81,6 +85,8 @@ async function hydrateClientSettings(): Promise<void> {
       }
     } catch (error) {
       console.error(`${CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE} hydrate failed`, error);
+    } finally {
+      clientSettingsHydrated = true;
     }
   })();
 
