@@ -8,9 +8,7 @@ interface ClientSettingsDocument {
   readonly settings: ClientSettings;
 }
 
-interface PersistedSavedEnvironmentStorageRecord extends PersistedSavedEnvironmentRecord {
-  readonly encryptedBearerToken?: string;
-}
+type PersistedSavedEnvironmentStorageRecord = PersistedSavedEnvironmentRecord;
 
 interface SavedEnvironmentRegistryDocument {
   readonly records: readonly PersistedSavedEnvironmentStorageRecord[];
@@ -52,8 +50,7 @@ function isPersistedSavedEnvironmentStorageRecord(
     typeof value.httpBaseUrl === "string" &&
     typeof value.wsBaseUrl === "string" &&
     typeof value.createdAt === "string" &&
-    (value.lastConnectedAt === null || typeof value.lastConnectedAt === "string") &&
-    (value.encryptedBearerToken === undefined || typeof value.encryptedBearerToken === "string")
+    (value.lastConnectedAt === null || typeof value.lastConnectedAt === "string")
   );
 }
 

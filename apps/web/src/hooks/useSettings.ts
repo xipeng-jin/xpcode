@@ -327,10 +327,3 @@ export function migrateLocalSettingsToServer(): void {
     localStorage.removeItem(OLD_SETTINGS_KEY);
   }
 }
-
-export function __resetClientSettingsPersistenceForTests(): void {
-  clientSettingsSnapshot = DEFAULT_CLIENT_SETTINGS;
-  clientSettingsHydrated = false;
-  clientSettingsHydrationPromise = null;
-  clientSettingsListeners.clear();
-}
