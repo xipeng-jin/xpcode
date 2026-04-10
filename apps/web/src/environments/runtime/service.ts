@@ -614,7 +614,15 @@ export async function addSavedEnvironment(input: {
   };
 
   await persistSavedEnvironmentRecord(record);
-  await writeSavedEnvironmentBearerToken(environmentId, bearerSession.sessionToken);
+  const tokenPersisted = await writeSavedEnvironmentBearerToken(
+    environmentId,
+    bearerSession.sessionToken,
+  );
+  if (!tokenPersisted) {
+    throw new Error(
+      "Failed to persist the bearer token for the saved environment. The credential could not be stored securely.",
+    );
+  }
   await ensureSavedEnvironmentConnection(record, {
     bearerToken: bearerSession.sessionToken,
     role: bearerSession.role,

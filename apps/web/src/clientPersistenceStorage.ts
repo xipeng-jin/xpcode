@@ -67,9 +67,79 @@ export function writeBrowserClientSettings(settings: ClientSettings): void {
   setLocalStorageItem(CLIENT_SETTINGS_STORAGE_KEY, settings, ClientSettingsSchema);
 }
 
+function migrateLegacySavedEnvironmentRegistry(): void {
+  if (!hasWindow()) return;
+
+  const raw = window.localStorage.getItem(SAVED_ENVIRONMENT_REGISTRY_STORAGE_KEY);
+  if (!raw) return;
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "state" in parsed &&
+      typeof (parsed as Record<string, unknown>).state === "object" &&
+      !("records" in parsed)
+    ) {
+      const state = (parsed as { state: Record<string, unknown> }).state;
+      const byId =
+        typeof state?.byId === "object" && state.byId !== null
+          ? (state.byId as Record<string, Record<string, unknown>>)
+          : {};
+      const secretsById =
+        typeof state?.secretsById === "object" && state.secretsById !== null
+          ? (state.secretsById as Record<string, string>)
+          : {};
+      const records: BrowserSavedEnvironmentRecord[] = [];
+      for (const entry of Object.values(byId)) {
+        if (
+          typeof entry.environmentId !== "string" ||
+          typeof entry.label !== "string" ||
+          typeof entry.httpBaseUrl !== "string" ||
+          typeof entry.wsBaseUrl !== "string" ||
+          typeof entry.createdAt !== "string"
+        ) {
+          continue;
+        }
+        const bearerToken =
+          (typeof secretsById[entry.environmentId] === "string" &&
+            secretsById[entry.environmentId]) ||
+          (typeof entry.bearerToken === "string" && entry.bearerToken.length > 0
+            ? entry.bearerToken
+            : undefined);
+        records.push({
+          environmentId: entry.environmentId as EnvironmentIdValue,
+          label: entry.label,
+          httpBaseUrl: entry.httpBaseUrl,
+          wsBaseUrl: entry.wsBaseUrl,
+          createdAt: entry.createdAt,
+          lastConnectedAt: typeof entry.lastConnectedAt === "string" ? entry.lastConnectedAt : null,
+          ...(bearerToken ? { bearerToken } : {}),
+        });
+      }
+
+      setLocalStorageItem(
+        SAVED_ENVIRONMENT_REGISTRY_STORAGE_KEY,
+        { version: 1, records },
+        BrowserSavedEnvironmentRegistryDocumentSchema,
+      );
+    }
+  } catch {
+    // Malformed data; leave it for the normal read path to handle gracefully.
+  }
+}
+
+let legacyMigrationRan = false;
+
 function readBrowserSavedEnvironmentRegistryDocument(): BrowserSavedEnvironmentRegistryDocument {
   if (!hasWindow()) {
     return {};
+  }
+
+  if (!legacyMigrationRan) {
+    legacyMigrationRan = true;
+    migrateLegacySavedEnvironmentRegistry();
   }
 
   try {
