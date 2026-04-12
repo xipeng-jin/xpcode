@@ -46,6 +46,7 @@ We are very very early in this project. Expect bugs.
 We are not accepting contributions yet.
 
 Observability guide: [docs/observability.md](./docs/observability.md)
+Troubleshooting guide: [docs/troubleshooting.md](./docs/troubleshooting.md)
 
 ## If you REALLY want to contribute still.... read this first
 
