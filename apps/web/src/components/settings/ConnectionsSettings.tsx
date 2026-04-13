@@ -1,8 +1,9 @@
-import { PlusIcon, QrCodeIcon } from "lucide-react";
+import { PlusIcon, QrCodeIcon, TriangleAlertIcon } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
   type AuthClientSession,
   type AuthPairingLink,
+  type DesktopSecretStorageStatus,
   type DesktopServerExposureState,
   type EnvironmentId,
 } from "@t3tools/contracts";
@@ -44,6 +45,7 @@ import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { Button } from "../ui/button";
+import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { Textarea } from "../ui/textarea";
 import { setPairingTokenOnUrl } from "../../pairingUrl";
 import {
@@ -775,6 +777,8 @@ export function ConnectionsSettings() {
   const [desktopServerExposureState, setDesktopServerExposureState] =
     useState<DesktopServerExposureState | null>(null);
   const [desktopServerExposureError, setDesktopServerExposureError] = useState<string | null>(null);
+  const [desktopSecretStorageStatus, setDesktopSecretStorageStatus] =
+    useState<DesktopSecretStorageStatus | null>(null);
   const [desktopPairingLinks, setDesktopPairingLinks] = useState<
     ReadonlyArray<ServerPairingLinkRecord>
   >([]);
@@ -811,6 +815,7 @@ export function ConnectionsSettings() {
     DesktopServerExposureState["mode"] | null
   >(null);
   const canManageLocalBackend = currentSessionRole === "owner";
+  const isDesktopSecretStorageUnavailable = desktopSecretStorageStatus?.available === false;
   const isLocalBackendNetworkAccessible = desktopBridge
     ? desktopServerExposureState?.mode === "network-accessible"
     : currentAuthPolicy === "remote-reachable";
@@ -1117,6 +1122,29 @@ export function ConnectionsSettings() {
   }, [canManageLocalBackend, desktopBridge]);
 
   useEffect(() => {
+    if (!desktopBridge) {
+      setDesktopSecretStorageStatus(null);
+      return;
+    }
+
+    let cancelled = false;
+    void desktopBridge
+      .getSecretStorageStatus()
+      .then((status) => {
+        if (cancelled) return;
+        setDesktopSecretStorageStatus(status);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setDesktopSecretStorageStatus(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [desktopBridge]);
+
+  useEffect(() => {
     if (canManageLocalBackend) return;
     setIsLoadingDesktopAccessManagement(false);
     setDesktopPairingLinks([]);
@@ -1124,10 +1152,17 @@ export function ConnectionsSettings() {
     setDesktopAccessManagementError(null);
     setDesktopServerExposureState(null);
     setDesktopServerExposureError(null);
+    setDesktopSecretStorageStatus(null);
   }, [canManageLocalBackend]);
   const visibleDesktopPairingLinks = useMemo(
     () => desktopPairingLinks.filter((pairingLink) => pairingLink.role === "client"),
     [desktopPairingLinks],
+  );
+  const addEnvironmentButton = (
+    <Button size="xs" variant="outline" disabled={isDesktopSecretStorageUnavailable}>
+      <PlusIcon className="size-3" />
+      Add environment
+    </Button>
   );
   return (
     <SettingsPageContainer>
@@ -1288,143 +1323,160 @@ export function ConnectionsSettings() {
       <SettingsSection
         title="Remote environments"
         headerAction={
-          <Dialog
-            open={addBackendDialogOpen}
-            onOpenChange={(open) => {
-              setAddBackendDialogOpen(open);
-              if (!open) {
-                setSavedBackendError(null);
-              }
-            }}
-          >
-            <DialogTrigger
-              render={
-                <Button size="xs" variant="outline">
-                  <PlusIcon className="size-3" />
-                  Add environment
-                </Button>
-              }
-            />
-            <DialogPopup>
-              <DialogHeader>
-                <DialogTitle>Add Environment</DialogTitle>
-                <DialogDescription>Pair another environment to this client.</DialogDescription>
-                <div className="flex gap-1 rounded-lg border border-border/60 bg-muted/50 p-1">
-                  <button
-                    type="button"
-                    className={cn(
-                      "flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                      savedBackendMode === "pairing-url"
-                        ? "bg-background text-foreground shadow-xs"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                    disabled={isAddingSavedBackend}
-                    onClick={() => setSavedBackendMode("pairing-url")}
-                  >
-                    Pairing URL
-                  </button>
-                  <button
-                    type="button"
-                    className={cn(
-                      "flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                      savedBackendMode === "host-code"
-                        ? "bg-background text-foreground shadow-xs"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                    disabled={isAddingSavedBackend}
-                    onClick={() => setSavedBackendMode("host-code")}
-                  >
-                    Host + code
-                  </button>
-                </div>
-              </DialogHeader>
-              <DialogPanel>
-                <div className="space-y-4">
-                  {savedBackendMode === "pairing-url" ? (
-                    <p className="text-xs text-muted-foreground">
-                      Enter the full pairing URL from the environment you want to connect to.
-                    </p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      Enter the backend host and pairing code separately.
-                    </p>
-                  )}
-                  <div className="space-y-3">
-                    <label className="block">
-                      <span className="mb-1.5 block text-xs font-medium text-foreground">
-                        Label
-                      </span>
-                      <Input
-                        value={savedBackendLabel}
-                        onChange={(event) => setSavedBackendLabel(event.target.value)}
-                        placeholder="My backend (optional)"
-                        disabled={isAddingSavedBackend}
-                        spellCheck={false}
-                      />
-                    </label>
+          isDesktopSecretStorageUnavailable ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={<span className="inline-flex">{addEnvironmentButton}</span>}
+              />
+              <TooltipPopup
+                side="top"
+                className="max-w-80 whitespace-normal text-left text-pretty leading-tight"
+              >
+                Secure credential storage is unavailable on this desktop. Remote pairing is disabled
+                until it is fixed.
+              </TooltipPopup>
+            </Tooltip>
+          ) : (
+            <Dialog
+              open={addBackendDialogOpen}
+              onOpenChange={(open) => {
+                setAddBackendDialogOpen(open);
+                if (!open) {
+                  setSavedBackendError(null);
+                }
+              }}
+            >
+              <DialogTrigger render={addEnvironmentButton} />
+              <DialogPopup>
+                <DialogHeader>
+                  <DialogTitle>Add Environment</DialogTitle>
+                  <DialogDescription>Pair another environment to this client.</DialogDescription>
+                  <div className="flex gap-1 rounded-lg border border-border/60 bg-muted/50 p-1">
+                    <button
+                      type="button"
+                      className={cn(
+                        "flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                        savedBackendMode === "pairing-url"
+                          ? "bg-background text-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                      disabled={isAddingSavedBackend}
+                      onClick={() => setSavedBackendMode("pairing-url")}
+                    >
+                      Pairing URL
+                    </button>
+                    <button
+                      type="button"
+                      className={cn(
+                        "flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                        savedBackendMode === "host-code"
+                          ? "bg-background text-foreground shadow-xs"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                      disabled={isAddingSavedBackend}
+                      onClick={() => setSavedBackendMode("host-code")}
+                    >
+                      Host + code
+                    </button>
+                  </div>
+                </DialogHeader>
+                <DialogPanel>
+                  <div className="space-y-4">
                     {savedBackendMode === "pairing-url" ? (
+                      <p className="text-xs text-muted-foreground">
+                        Enter the full pairing URL from the environment you want to connect to.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Enter the backend host and pairing code separately.
+                      </p>
+                    )}
+                    <div className="space-y-3">
                       <label className="block">
                         <span className="mb-1.5 block text-xs font-medium text-foreground">
-                          Pairing URL
+                          Label
                         </span>
                         <Input
-                          value={savedBackendPairingUrl}
-                          onChange={(event) => setSavedBackendPairingUrl(event.target.value)}
-                          placeholder="https://backend.example.com/pair#token=..."
+                          value={savedBackendLabel}
+                          onChange={(event) => setSavedBackendLabel(event.target.value)}
+                          placeholder="My backend (optional)"
                           disabled={isAddingSavedBackend}
                           spellCheck={false}
                         />
-                        <span className="mt-1 block text-[11px] text-muted-foreground">
-                          The full URL including the pairing token.
-                        </span>
                       </label>
-                    ) : (
-                      <>
+                      {savedBackendMode === "pairing-url" ? (
                         <label className="block">
                           <span className="mb-1.5 block text-xs font-medium text-foreground">
-                            Host
+                            Pairing URL
                           </span>
                           <Input
-                            value={savedBackendHost}
-                            onChange={(event) => setSavedBackendHost(event.target.value)}
-                            placeholder="https://backend.example.com"
+                            value={savedBackendPairingUrl}
+                            onChange={(event) => setSavedBackendPairingUrl(event.target.value)}
+                            placeholder="https://backend.example.com/pair#token=..."
                             disabled={isAddingSavedBackend}
                             spellCheck={false}
                           />
-                        </label>
-                        <label className="block">
-                          <span className="mb-1.5 block text-xs font-medium text-foreground">
-                            Pairing code
+                          <span className="mt-1 block text-[11px] text-muted-foreground">
+                            The full URL including the pairing token.
                           </span>
-                          <Input
-                            value={savedBackendPairingCode}
-                            onChange={(event) => setSavedBackendPairingCode(event.target.value)}
-                            placeholder="Pairing code"
-                            disabled={isAddingSavedBackend}
-                            spellCheck={false}
-                          />
                         </label>
-                      </>
-                    )}
+                      ) : (
+                        <>
+                          <label className="block">
+                            <span className="mb-1.5 block text-xs font-medium text-foreground">
+                              Host
+                            </span>
+                            <Input
+                              value={savedBackendHost}
+                              onChange={(event) => setSavedBackendHost(event.target.value)}
+                              placeholder="https://backend.example.com"
+                              disabled={isAddingSavedBackend}
+                              spellCheck={false}
+                            />
+                          </label>
+                          <label className="block">
+                            <span className="mb-1.5 block text-xs font-medium text-foreground">
+                              Pairing code
+                            </span>
+                            <Input
+                              value={savedBackendPairingCode}
+                              onChange={(event) => setSavedBackendPairingCode(event.target.value)}
+                              placeholder="Pairing code"
+                              disabled={isAddingSavedBackend}
+                              spellCheck={false}
+                            />
+                          </label>
+                        </>
+                      )}
+                    </div>
+                    {savedBackendError ? (
+                      <p className="text-xs text-destructive">{savedBackendError}</p>
+                    ) : null}
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      disabled={isAddingSavedBackend}
+                      onClick={() => void handleAddSavedBackend()}
+                    >
+                      <PlusIcon className="size-3.5" />
+                      {isAddingSavedBackend ? "Adding…" : "Add Backend"}
+                    </Button>
                   </div>
-                  {savedBackendError ? (
-                    <p className="text-xs text-destructive">{savedBackendError}</p>
-                  ) : null}
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    disabled={isAddingSavedBackend}
-                    onClick={() => void handleAddSavedBackend()}
-                  >
-                    <PlusIcon className="size-3.5" />
-                    {isAddingSavedBackend ? "Adding…" : "Add Backend"}
-                  </Button>
-                </div>
-              </DialogPanel>
-            </DialogPopup>
-          </Dialog>
+                </DialogPanel>
+              </DialogPopup>
+            </Dialog>
+          )
         }
       >
+        {isDesktopSecretStorageUnavailable ? (
+          <div className={ITEM_ROW_CLASSNAME}>
+            <Alert variant="warning" className="rounded-xl border-warning/40 bg-warning/8">
+              <TriangleAlertIcon />
+              <AlertTitle>Remote pairing is blocked on this desktop</AlertTitle>
+              <AlertDescription>{desktopSecretStorageStatus?.message}</AlertDescription>
+            </Alert>
+          </div>
+        ) : null}
         {savedEnvironmentIds.map((environmentId) => (
           <SavedBackendListRow
             key={environmentId}

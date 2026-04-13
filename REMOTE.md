@@ -55,6 +55,40 @@ Use `t3 serve --help` for the full flag reference. It supports the same general 
 > For now, use `t3 project ...` on the server machine instead.
 > Full GUI support for remote project management is coming soon.
 
+## Desktop Secret Storage
+
+The desktop app only saves remote environment credentials when secure local credential storage is available.
+
+If secure storage is unavailable:
+
+- T3 Code keeps the rest of the app usable
+- T3 Code blocks adding new remote environments before exchanging the pairing credential
+- the pairing URL is not consumed or burned
+- the browser pairing flow may still work because browser persistence uses a different storage path
+
+This is intentional. Remote pairing produces a long-lived session token, and the desktop app refuses to fetch that token unless it can store it safely.
+
+## Linux Notes
+
+On Linux, Electron secret storage depends on a supported secret store being installed and unlocked for the current desktop session.
+
+Common setups:
+
+- GNOME-style Secret Service: `gnome-keyring libsecret seahorse`
+- KDE-style Secret Service: `kwallet kwallet-pam kwalletmanager libsecret`
+
+If your environment needs an explicit backend selection, launch T3 Code with one of these:
+
+```bash
+T3CODE_DESKTOP_PASSWORD_STORE=gnome-libsecret ./T3-Code-*.AppImage
+```
+
+```bash
+T3CODE_DESKTOP_PASSWORD_STORE=kwallet6 ./T3-Code-*.AppImage
+```
+
+T3 Code does not fall back to plaintext credential storage for remote environments.
+
 ## How Pairing Works
 
 The remote device does not need a long-lived secret up front.

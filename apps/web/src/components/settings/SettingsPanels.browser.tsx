@@ -113,6 +113,10 @@ const authAccessHarness = vi.hoisted(() => {
   };
 });
 
+const addSavedEnvironmentMock = vi.hoisted(() => vi.fn());
+const reconnectSavedEnvironmentMock = vi.hoisted(() => vi.fn());
+const removeSavedEnvironmentMock = vi.hoisted(() => vi.fn());
+
 vi.mock("../../environments/runtime", () => {
   const primaryConnection = {
     kind: "primary" as const,
@@ -149,13 +153,13 @@ vi.mock("../../environments/runtime", () => {
     resolveEnvironmentHttpUrl: (_environmentId: unknown, path: string) =>
       new URL(path, "http://localhost:3000").toString(),
     waitForSavedEnvironmentRegistryHydration: async () => undefined,
-    addSavedEnvironment: vi.fn(),
+    addSavedEnvironment: addSavedEnvironmentMock,
     disconnectSavedEnvironment: vi.fn(),
     ensureEnvironmentConnectionBootstrapped: async () => undefined,
     getPrimaryEnvironmentConnection: () => primaryConnection,
     readEnvironmentConnection: () => primaryConnection,
-    reconnectSavedEnvironment: vi.fn(),
-    removeSavedEnvironment: vi.fn(),
+    reconnectSavedEnvironment: reconnectSavedEnvironmentMock,
+    removeSavedEnvironment: removeSavedEnvironmentMock,
     requireEnvironmentConnection: () => primaryConnection,
     resetEnvironmentServiceForTests: () => undefined,
     startEnvironmentConnectionService: () => undefined,
@@ -260,6 +264,7 @@ const createDesktopBridgeStub = (overrides?: {
   readonly serverExposureState?: Awaited<ReturnType<DesktopBridge["getServerExposureState"]>>;
   readonly setServerExposureMode?: DesktopBridge["setServerExposureMode"];
   readonly setUpdateChannel?: DesktopBridge["setUpdateChannel"];
+  readonly secretStorageStatus?: Awaited<ReturnType<DesktopBridge["getSecretStorageStatus"]>>;
 }): DesktopBridge => {
   const idleUpdateState: DesktopUpdateState = {
     enabled: false,
@@ -293,6 +298,17 @@ const createDesktopBridgeStub = (overrides?: {
     getSavedEnvironmentSecret: vi.fn().mockResolvedValue(null),
     setSavedEnvironmentSecret: vi.fn().mockResolvedValue(true),
     removeSavedEnvironmentSecret: vi.fn().mockResolvedValue(undefined),
+    getSecretStorageStatus: vi.fn().mockResolvedValue(
+      overrides?.secretStorageStatus ?? {
+        available: true,
+        platform: "linux",
+        backend: "gnome_libsecret",
+        desktopEnvironment: "Hyprland",
+        sessionType: "wayland",
+        recommendedPasswordStore: "gnome-libsecret",
+        message: null,
+      },
+    ),
     getServerExposureState: vi.fn().mockResolvedValue(
       overrides?.serverExposureState ?? {
         mode: "local-only",
@@ -344,6 +360,9 @@ describe("GeneralSettingsPanel observability", () => {
     await __resetLocalApiForTests();
     localStorage.clear();
     authAccessHarness.reset();
+    addSavedEnvironmentMock.mockReset();
+    reconnectSavedEnvironmentMock.mockReset();
+    removeSavedEnvironmentMock.mockReset();
   });
 
   afterEach(async () => {
@@ -678,6 +697,40 @@ describe("GeneralSettingsPanel observability", () => {
     await expect
       .element(page.getByText("Reachable at http://192.168.1.44:3773"))
       .toBeInTheDocument();
+  });
+
+  it("disables add environment when desktop secret storage is unavailable", async () => {
+    const unavailableMessage =
+      "Secure credential storage is unavailable on this desktop, so T3 Code will not pair remote environments yet. This prevents one-time pairing links from being consumed and lost. Desktop session: Hyprland. Secret storage backend: basic_text.";
+    window.desktopBridge = createDesktopBridgeStub({
+      secretStorageStatus: {
+        available: false,
+        platform: "linux",
+        backend: "basic_text",
+        desktopEnvironment: "Hyprland",
+        sessionType: "wayland",
+        recommendedPasswordStore: "gnome-libsecret",
+        message: unavailableMessage,
+      },
+    });
+    addSavedEnvironmentMock.mockRejectedValue(new Error(unavailableMessage));
+
+    setServerConfigSnapshot(createBaseServerConfig());
+
+    mounted = await render(
+      <AppAtomRegistryProvider>
+        <ConnectionsSettings />
+      </AppAtomRegistryProvider>,
+    );
+
+    await expect
+      .element(page.getByText("Remote pairing is blocked on this desktop"))
+      .toBeInTheDocument();
+    await expect.element(page.getByText(unavailableMessage)).toBeInTheDocument();
+    await expect
+      .element(page.getByRole("button", { name: "Add environment", exact: true }))
+      .toBeDisabled();
+    expect(addSavedEnvironmentMock).not.toHaveBeenCalled();
   });
 
   it("opens the logs folder in the preferred editor", async () => {

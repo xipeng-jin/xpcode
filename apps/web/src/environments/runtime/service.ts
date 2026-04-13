@@ -1,5 +1,6 @@
 import {
   type AuthSessionRole,
+  type DesktopSecretStorageStatus,
   type EnvironmentId,
   type OrchestrationEvent,
   type OrchestrationShellSnapshot,
@@ -390,6 +391,30 @@ function getRuntimeErrorFields(error: unknown) {
 
 function isoNow(): string {
   return new Date().toISOString();
+}
+
+function toSecretStorageUnavailableErrorMessage(status: DesktopSecretStorageStatus): string {
+  return (
+    status.message ??
+    "Secure credential storage is unavailable on this desktop, so T3 Code will not pair remote environments yet. This prevents one-time pairing links from being consumed and lost."
+  );
+}
+
+function toSavedEnvironmentPersistenceErrorMessage(status: DesktopSecretStorageStatus): string {
+  return status.available
+    ? "Failed to persist saved environment credentials."
+    : toSecretStorageUnavailableErrorMessage(status);
+}
+
+async function assertDesktopSecretStorageAvailable(): Promise<void> {
+  if (typeof window === "undefined" || !window.desktopBridge) {
+    return;
+  }
+
+  const status = await ensureLocalApi().persistence.getSecretStorageStatus();
+  if (!status.available) {
+    throw new Error(toSecretStorageUnavailableErrorMessage(status));
+  }
 }
 
 function setRuntimeConnecting(environmentId: EnvironmentId) {
@@ -963,6 +988,7 @@ export async function addSavedEnvironment(input: {
     ...(input.host !== undefined ? { host: input.host } : {}),
     ...(input.pairingCode !== undefined ? { pairingCode: input.pairingCode } : {}),
   });
+  await assertDesktopSecretStorageAvailable();
   const descriptor = await fetchRemoteEnvironmentDescriptor({
     httpBaseUrl: resolvedTarget.httpBaseUrl,
   });
@@ -1002,7 +1028,8 @@ export async function addSavedEnvironment(input: {
         lastConnectedAt: entry.lastConnectedAt,
       })),
     );
-    throw new Error("Unable to persist saved environment credentials.");
+    const status = await ensureLocalApi().persistence.getSecretStorageStatus();
+    throw new Error(toSavedEnvironmentPersistenceErrorMessage(status));
   }
   await ensureSavedEnvironmentConnection(record, {
     bearerToken: bearerSession.sessionToken,

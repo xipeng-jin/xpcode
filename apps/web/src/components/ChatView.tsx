@@ -30,7 +30,7 @@ import { applyClaudePromptEffortPrefix, createModelSelection } from "@t3tools/sh
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
 import { truncate } from "@t3tools/shared/String";
 import { Debouncer } from "@tanstack/react-pacer";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useShallow } from "zustand/react/shallow";
 import { useGitStatus } from "~/lib/gitStatusState";
@@ -1555,17 +1555,17 @@ export default function ChatView(props: ChatViewProps) {
     [draftId, routeThreadRef, serverThread, setStoreThreadError],
   );
 
-  const focusComposer = useCallback(() => {
+  const focusComposer = useEffectEvent(() => {
     composerRef.current?.focusAtEnd();
-  }, []);
-  const scheduleComposerFocus = useCallback(() => {
+  });
+  const scheduleComposerFocus = useEffectEvent(() => {
     window.requestAnimationFrame(() => {
       focusComposer();
     });
-  }, [focusComposer]);
-  const addTerminalContextToDraft = useCallback((selection: TerminalContextSelection) => {
+  });
+  const addTerminalContextToDraft = useEffectEvent((selection: TerminalContextSelection) => {
     composerRef.current?.addTerminalContext(selection);
-  }, []);
+  });
   const setTerminalOpen = useCallback(
     (open: boolean) => {
       if (!activeThreadRef) return;
@@ -1879,7 +1879,6 @@ export default function ChatView(props: ChatViewProps) {
     [
       isLocalDraftThread,
       runtimeMode,
-      scheduleComposerFocus,
       composerDraftTarget,
       setComposerDraftRuntimeMode,
       setDraftThreadContext,
@@ -1898,7 +1897,6 @@ export default function ChatView(props: ChatViewProps) {
     [
       interactionMode,
       isLocalDraftThread,
-      scheduleComposerFocus,
       composerDraftTarget,
       setComposerDraftInteractionMode,
       setDraftThreadContext,
@@ -2038,7 +2036,7 @@ export default function ChatView(props: ChatViewProps) {
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [activeThread?.id, focusComposer, terminalState.terminalOpen]);
+  }, [activeThread?.id, terminalState.terminalOpen]);
 
   useEffect(() => {
     if (!activeThread?.id) return;
@@ -2225,7 +2223,7 @@ export default function ChatView(props: ChatViewProps) {
     }
 
     terminalOpenByThreadRef.current[activeThreadKey] = current;
-  }, [activeThreadKey, focusComposer, terminalState.terminalOpen]);
+  }, [activeThreadKey, terminalState.terminalOpen]);
 
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent) => {
@@ -2744,7 +2742,7 @@ export default function ChatView(props: ChatViewProps) {
     [activePendingUserInput],
   );
 
-  const onSelectActivePendingUserInputOption = useCallback(
+  const onSelectActivePendingUserInputOption = useEffectEvent(
     (questionId: string, optionLabel: string) => {
       if (!activePendingUserInput) {
         return;
@@ -2774,10 +2772,9 @@ export default function ChatView(props: ChatViewProps) {
       promptRef.current = "";
       composerRef.current?.resetCursorState({ cursor: 0 });
     },
-    [activePendingProgress?.activeQuestion, activePendingUserInput],
   );
 
-  const onChangeActivePendingUserInputCustomAnswer = useCallback(
+  const onChangeActivePendingUserInputCustomAnswer = useEffectEvent(
     (
       questionId: string,
       value: string,
@@ -2808,7 +2805,6 @@ export default function ChatView(props: ChatViewProps) {
         composerRef.current?.focusAt(nextCursor);
       }
     },
-    [activePendingUserInput],
   );
 
   const onAdvanceActivePendingUserInput = useCallback(() => {
@@ -2837,7 +2833,7 @@ export default function ChatView(props: ChatViewProps) {
     setActivePendingUserInputQuestionIndex(Math.max(activePendingProgress.questionIndex - 1, 0));
   }, [activePendingProgress, setActivePendingUserInputQuestionIndex]);
 
-  const onSubmitPlanFollowUp = useCallback(
+  const onSubmitPlanFollowUp = useEffectEvent(
     async ({
       text,
       interactionMode: nextInteractionMode,
@@ -2966,23 +2962,9 @@ export default function ChatView(props: ChatViewProps) {
         resetLocalDispatch();
       }
     },
-    [
-      activeThread,
-      activeProposedPlan,
-      beginLocalDispatch,
-      isConnecting,
-      isSendBusy,
-      isServerThread,
-      persistThreadSettingsForNextTurn,
-      resetLocalDispatch,
-      runtimeMode,
-      setComposerDraftInteractionMode,
-      setThreadError,
-      environmentId,
-    ],
   );
 
-  const onImplementPlanInNewThread = useCallback(async () => {
+  const onImplementPlanInNewThread = useEffectEvent(async () => {
     const api = readEnvironmentApi(environmentId);
     if (
       !api ||
@@ -3100,20 +3082,7 @@ export default function ChatView(props: ChatViewProps) {
         );
       })
       .then(finish, finish);
-  }, [
-    activeProject,
-    activeProposedPlan,
-    activeThreadBranch,
-    activeThread,
-    beginLocalDispatch,
-    isConnecting,
-    isSendBusy,
-    isServerThread,
-    navigate,
-    resetLocalDispatch,
-    runtimeMode,
-    environmentId,
-  ]);
+  });
 
   const onProviderModelSelect = useCallback(
     (provider: ProviderKind, model: string) => {
@@ -3143,7 +3112,6 @@ export default function ChatView(props: ChatViewProps) {
     [
       activeThread,
       lockedProvider,
-      scheduleComposerFocus,
       setComposerDraftModelSelection,
       setStickyComposerModelSelection,
       providerStatuses,
@@ -3171,7 +3139,6 @@ export default function ChatView(props: ChatViewProps) {
       draftThread?.worktreePath,
       isLocalDraftThread,
       setPendingServerThreadEnvMode,
-      scheduleComposerFocus,
       setDraftThreadContext,
     ],
   );

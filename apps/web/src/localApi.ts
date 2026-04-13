@@ -108,6 +108,20 @@ export function createLocalApi(rpcClient: WsRpcClient): LocalApi {
         }
         removeBrowserSavedEnvironmentSecret(environmentId);
       },
+      getSecretStorageStatus: async () => {
+        if (window.desktopBridge) {
+          return window.desktopBridge.getSecretStorageStatus();
+        }
+        return {
+          available: true,
+          platform: "browser",
+          backend: null,
+          desktopEnvironment: null,
+          sessionType: null,
+          recommendedPasswordStore: null,
+          message: null,
+        } as const;
+      },
     },
     server: {
       getConfig: rpcClient.server.getConfig,

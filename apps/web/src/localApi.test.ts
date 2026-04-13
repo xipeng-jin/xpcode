@@ -169,6 +169,15 @@ function makeDesktopBridge(overrides: Partial<DesktopBridge> = {}): DesktopBridg
     getSavedEnvironmentSecret: async () => null,
     setSavedEnvironmentSecret: async () => true,
     removeSavedEnvironmentSecret: async () => undefined,
+    getSecretStorageStatus: async () => ({
+      available: true,
+      platform: "linux",
+      backend: null,
+      desktopEnvironment: null,
+      sessionType: null,
+      recommendedPasswordStore: null,
+      message: null,
+    }),
     getServerExposureState: async () => ({
       mode: "local-only",
       endpointUrl: null,
@@ -550,6 +559,15 @@ describe("wsApi", () => {
     const getSavedEnvironmentSecret = vi.fn().mockResolvedValue("bearer-token");
     const setSavedEnvironmentSecret = vi.fn().mockResolvedValue(true);
     const removeSavedEnvironmentSecret = vi.fn().mockResolvedValue(undefined);
+    const getSecretStorageStatus = vi.fn().mockResolvedValue({
+      available: false,
+      platform: "linux",
+      backend: "basic_text",
+      desktopEnvironment: "Hyprland",
+      sessionType: "wayland",
+      recommendedPasswordStore: "gnome-libsecret",
+      message: "Secure credential storage is unavailable.",
+    });
     getWindowForTest().desktopBridge = makeDesktopBridge({
       getClientSettings,
       setClientSettings,
@@ -558,6 +576,7 @@ describe("wsApi", () => {
       getSavedEnvironmentSecret,
       setSavedEnvironmentSecret,
       removeSavedEnvironmentSecret,
+      getSecretStorageStatus,
     });
 
     const { createLocalApi } = await import("./localApi");
@@ -573,6 +592,7 @@ describe("wsApi", () => {
       "bearer-token",
     );
     await api.persistence.removeSavedEnvironmentSecret(EnvironmentId.make("environment-local"));
+    await api.persistence.getSecretStorageStatus();
 
     expect(getClientSettings).toHaveBeenCalledWith();
     expect(setClientSettings).toHaveBeenCalledWith(clientSettings);
@@ -581,6 +601,7 @@ describe("wsApi", () => {
     expect(getSavedEnvironmentSecret).toHaveBeenCalledWith("environment-local");
     expect(setSavedEnvironmentSecret).toHaveBeenCalledWith("environment-local", "bearer-token");
     expect(removeSavedEnvironmentSecret).toHaveBeenCalledWith("environment-local");
+    expect(getSecretStorageStatus).toHaveBeenCalledWith();
   });
 
   it("falls back to browser storage for persistence when the desktop bridge is missing", async () => {
@@ -636,5 +657,14 @@ describe("wsApi", () => {
     await expect(
       api.persistence.getSavedEnvironmentSecret(EnvironmentId.make("environment-local")),
     ).resolves.toBeNull();
+    await expect(api.persistence.getSecretStorageStatus()).resolves.toEqual({
+      available: true,
+      platform: "browser",
+      backend: null,
+      desktopEnvironment: null,
+      sessionType: null,
+      recommendedPasswordStore: null,
+      message: null,
+    });
   });
 });

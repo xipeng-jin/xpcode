@@ -21,6 +21,7 @@ import {
 import type { MenuItemConstructorOptions, OpenDialogOptions } from "electron";
 import type {
   ClientSettings,
+  DesktopSecretStorageStatus,
   DesktopTheme,
   DesktopAppBranding,
   DesktopServerExposureMode,
@@ -76,8 +77,16 @@ import {
 import { isArm64HostRunningIntelBuild, resolveDesktopRuntimeInfo } from "./runtimeArch.ts";
 import { resolveDesktopAppBranding } from "./appBranding.ts";
 import { bindFirstRevealTrigger, type RevealSubscription } from "./windowReveal.ts";
+import { applyLinuxPasswordStoreSwitch, resolveDesktopSecretStorageStatus } from "./secretStorage.ts";
 
 syncShellEnvironment();
+
+applyLinuxPasswordStoreSwitch({
+  platform: process.platform,
+  env: process.env,
+  argv: process.argv,
+  app,
+});
 
 const PICK_FOLDER_CHANNEL = "desktop:pick-folder";
 const CONFIRM_CHANNEL = "desktop:confirm";
@@ -100,6 +109,7 @@ const SET_SAVED_ENVIRONMENT_REGISTRY_CHANNEL = "desktop:set-saved-environment-re
 const GET_SAVED_ENVIRONMENT_SECRET_CHANNEL = "desktop:get-saved-environment-secret";
 const SET_SAVED_ENVIRONMENT_SECRET_CHANNEL = "desktop:set-saved-environment-secret";
 const REMOVE_SAVED_ENVIRONMENT_SECRET_CHANNEL = "desktop:remove-saved-environment-secret";
+const GET_SECRET_STORAGE_STATUS_CHANNEL = "desktop:get-secret-storage-status";
 const GET_SERVER_EXPOSURE_STATE_CHANNEL = "desktop:get-server-exposure-state";
 const SET_SERVER_EXPOSURE_MODE_CHANNEL = "desktop:set-server-exposure-mode";
 const BASE_DIR = process.env.T3CODE_HOME?.trim() || Path.join(OS.homedir(), ".t3");
@@ -224,6 +234,7 @@ let restoreStdIoCapture: (() => void) | null = null;
 let backendObservabilitySettings = readPersistedBackendObservabilitySettings();
 let desktopSettings = readDesktopSettings(DESKTOP_SETTINGS_PATH, app.getVersion());
 let desktopServerExposureMode: DesktopServerExposureMode = desktopSettings.serverExposureMode;
+let hasLoggedUnavailableSecretStorageWarning = false;
 
 let destructiveMenuIconCache: Electron.NativeImage | null | undefined;
 const expectedBackendExitChildren = new WeakSet<ChildProcess.ChildProcess>();
@@ -309,11 +320,38 @@ function getDesktopServerExposureState(): DesktopServerExposureState {
 }
 
 function getDesktopSecretStorage() {
+  const safeStorageWithBackend = safeStorage as typeof safeStorage & {
+    readonly getSelectedStorageBackend?: () => string;
+  };
   return {
     isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+    getSelectedStorageBackend: () => safeStorageWithBackend.getSelectedStorageBackend?.() ?? "",
     encryptString: (value: string) => safeStorage.encryptString(value),
     decryptString: (value: Buffer) => safeStorage.decryptString(value),
   } as const;
+}
+
+function getDesktopSecretStorageStatus(): DesktopSecretStorageStatus {
+  return resolveDesktopSecretStorageStatus({
+    platform: process.platform,
+    env: process.env,
+    safeStorage: getDesktopSecretStorage(),
+  });
+}
+
+function logUnavailableSecretStorageWarning(): void {
+  if (hasLoggedUnavailableSecretStorageWarning) {
+    return;
+  }
+
+  const status = getDesktopSecretStorageStatus();
+  if (status.available || status.message === null) {
+    return;
+  }
+
+  hasLoggedUnavailableSecretStorageWarning = true;
+  console.warn("[desktop] secret storage unavailable", status.message);
+  writeDesktopLogHeader(`secret storage unavailable message=${sanitizeLogValue(status.message)}`);
 }
 
 function resolveAdvertisedHostOverride(): string | undefined {
@@ -594,6 +632,7 @@ function captureBackendOutput(child: ChildProcess.ChildProcess): void {
 }
 
 initializePackagedLogging();
+logUnavailableSecretStorageWarning();
 
 if (process.platform === "linux") {
   app.commandLine.appendSwitch("class", LINUX_WM_CLASS);
@@ -1646,6 +1685,9 @@ function registerIpcHandlers(): void {
       });
     },
   );
+
+  ipcMain.removeHandler(GET_SECRET_STORAGE_STATUS_CHANNEL);
+  ipcMain.handle(GET_SECRET_STORAGE_STATUS_CHANNEL, async () => getDesktopSecretStorageStatus());
 
   ipcMain.removeHandler(GET_SERVER_EXPOSURE_STATE_CHANNEL);
   ipcMain.handle(GET_SERVER_EXPOSURE_STATE_CHANNEL, async () => getDesktopServerExposureState());

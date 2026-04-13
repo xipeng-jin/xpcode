@@ -146,6 +146,22 @@ export interface PickFolderOptions {
   initialPath?: string | null;
 }
 
+export type DesktopSecretStorageRecommendedPasswordStore =
+  | "gnome-libsecret"
+  | "kwallet6"
+  | "kwallet5"
+  | "kwallet";
+
+export interface DesktopSecretStorageStatus {
+  available: boolean;
+  platform: string;
+  backend: string | null;
+  desktopEnvironment: string | null;
+  sessionType: string | null;
+  recommendedPasswordStore: DesktopSecretStorageRecommendedPasswordStore | null;
+  message: string | null;
+}
+
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
   getLocalEnvironmentBootstrap: () => DesktopEnvironmentBootstrap | null;
@@ -158,6 +174,7 @@ export interface DesktopBridge {
   getSavedEnvironmentSecret: (environmentId: EnvironmentId) => Promise<string | null>;
   setSavedEnvironmentSecret: (environmentId: EnvironmentId, secret: string) => Promise<boolean>;
   removeSavedEnvironmentSecret: (environmentId: EnvironmentId) => Promise<void>;
+  getSecretStorageStatus: () => Promise<DesktopSecretStorageStatus>;
   getServerExposureState: () => Promise<DesktopServerExposureState>;
   setServerExposureMode: (mode: DesktopServerExposureMode) => Promise<DesktopServerExposureState>;
   pickFolder: (options?: PickFolderOptions) => Promise<string | null>;
@@ -212,6 +229,7 @@ export interface LocalApi {
     getSavedEnvironmentSecret: (environmentId: EnvironmentId) => Promise<string | null>;
     setSavedEnvironmentSecret: (environmentId: EnvironmentId, secret: string) => Promise<boolean>;
     removeSavedEnvironmentSecret: (environmentId: EnvironmentId) => Promise<void>;
+    getSecretStorageStatus: () => Promise<DesktopSecretStorageStatus>;
   };
   server: {
     getConfig: () => Promise<ServerConfig>;
