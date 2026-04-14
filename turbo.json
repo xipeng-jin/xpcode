@@ -23,6 +23,16 @@
     "T3CODE_OTLP_EXPORT_INTERVAL_MS",
     "T3CODE_OTLP_SERVICE_NAME"
   ],
+  "globalPassThroughEnv": [
+    "DISPLAY",
+    "WAYLAND_DISPLAY",
+    "XDG_SESSION_TYPE",
+    "XDG_RUNTIME_DIR",
+    "GDK_SCALE",
+    "GDK_DPI_SCALE",
+    "OZONE_PLATFORM",
+    "ELECTRON_OZONE_PLATFORM_HINT"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
