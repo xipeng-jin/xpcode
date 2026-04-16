@@ -171,6 +171,11 @@ interface ClaudeQueryRuntime extends AsyncIterable<SDKMessage> {
   readonly close: () => void;
 }
 
+type ClaudeSdkEffort = NonNullable<ClaudeQueryOptions["effort"]>;
+type ClaudeQueryOptionsWithExtendedEffort = Omit<ClaudeQueryOptions, "effort"> & {
+  readonly effort?: ClaudeSdkEffort | "xhigh";
+};
+
 export interface ClaudeAdapterLiveOptions {
   readonly createQuery?: (input: {
     readonly prompt: AsyncIterable<SDKUserMessage>;
@@ -224,6 +229,11 @@ function getEffectiveClaudeAgentEffort(
     return "max";
   }
   return effort;
+}
+
+function toClaudeQueryOptions(options: ClaudeQueryOptionsWithExtendedEffort): ClaudeQueryOptions {
+  // The SDK runtime accepts `xhigh`, but the published TypeScript type lags behind.
+  return options as ClaudeQueryOptions;
 }
 
 function isClaudeInterruptedMessage(message: string): boolean {
@@ -2843,7 +2853,7 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(fastMode ? { fastMode: true } : {}),
       };
 
-      const queryOptions: ClaudeQueryOptions = {
+      const queryOptions: ClaudeQueryOptionsWithExtendedEffort = {
         ...(input.cwd ? { cwd: input.cwd } : {}),
         ...(apiModelId ? { model: apiModelId } : {}),
         pathToClaudeCodeExecutable: claudeBinaryPath,
@@ -2873,7 +2883,7 @@ const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         try: () =>
           createQuery({
             prompt,
-            options: queryOptions,
+            options: toClaudeQueryOptions(queryOptions),
           }),
         catch: (cause) =>
           new ProviderAdapterProcessError({
