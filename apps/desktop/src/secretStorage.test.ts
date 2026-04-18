@@ -4,7 +4,7 @@ import {
   applyLinuxPasswordStoreSwitch,
   resolveDesktopSecretStorageStatus,
   resolveLinuxPasswordStoreSwitch,
-} from "./secretStorage";
+} from "./secretStorage.ts";
 
 describe("secretStorage", () => {
   it("reports unavailable Linux secret storage with diagnostics and guidance", () => {
