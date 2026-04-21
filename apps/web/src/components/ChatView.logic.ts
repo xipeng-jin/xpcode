@@ -25,8 +25,7 @@ import {
 import type { DraftThreadEnvMode } from "../composerDraftStore";
 
 export const LAST_INVOKED_SCRIPT_BY_PROJECT_KEY = "t3code:last-invoked-script-by-project";
-export const REVERT_COMPOSER_DRAFT_BY_MESSAGE_ID_KEY =
-  "t3code:revert-composer-draft-by-message-id";
+export const REVERT_COMPOSER_DRAFT_BY_MESSAGE_ID_KEY = "t3code:revert-composer-draft-by-message-id";
 export const MAX_HIDDEN_MOUNTED_TERMINAL_THREADS = 10;
 
 export const LastInvokedScriptByProjectSchema = Schema.Record(ProjectId, Schema.String);
@@ -80,8 +79,14 @@ export function deriveRestorableComposerDraft(input: {
       prompt: input.savedDraft.prompt,
       attachments: input.savedDraft.attachments,
       terminalContexts: input.savedDraft.terminalContexts.map((context) => ({
-        ...context,
+        id: context.id,
         threadId: input.currentThreadId,
+        createdAt: context.createdAt,
+        terminalId: context.terminalId,
+        terminalLabel: context.terminalLabel,
+        lineStart: context.lineStart,
+        lineEnd: context.lineEnd,
+        text: context.text,
       })),
     };
   }
@@ -100,7 +105,11 @@ export function deriveRestorableComposerDraft(input: {
       id: `restored-${input.message.id}-${index}`,
       threadId: input.currentThreadId,
       createdAt: input.message.createdAt,
-      ...context,
+      terminalId: context.terminalId,
+      terminalLabel: context.terminalLabel,
+      lineStart: context.lineStart,
+      lineEnd: context.lineEnd,
+      text: context.text,
     })),
   };
 }

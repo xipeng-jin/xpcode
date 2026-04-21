@@ -2327,6 +2327,38 @@ export default function ChatView(props: ChatViewProps) {
     toggleTerminalVisibility,
   ]);
 
+  const applyRestoredComposerDraft = useEffectEvent(
+    (restoredDraft: ReturnType<typeof deriveRestorableComposerDraft>) => {
+      const restoredImages = hydrateComposerImagesFromPersistedAttachments(
+        restoredDraft.attachments,
+      );
+      const restoredTerminalContexts = restoredDraft.terminalContexts.map((context) => ({
+        id: context.id,
+        threadId: context.threadId,
+        createdAt: context.createdAt,
+        terminalId: context.terminalId,
+        terminalLabel: context.terminalLabel,
+        lineStart: context.lineStart,
+        lineEnd: context.lineEnd,
+        text: context.text,
+      }));
+      promptRef.current = restoredDraft.prompt;
+      composerImagesRef.current = restoredImages;
+      composerTerminalContextsRef.current = restoredTerminalContexts;
+      clearComposerDraftContent(composerDraftTarget);
+      setComposerDraftPrompt(composerDraftTarget, restoredDraft.prompt);
+      if (restoredImages.length > 0) {
+        addComposerDraftImages(composerDraftTarget, restoredImages);
+      }
+      setComposerDraftTerminalContexts(composerDraftTarget, restoredTerminalContexts);
+      composerRef.current?.resetCursorState({
+        cursor: collapseExpandedComposerCursor(restoredDraft.prompt, restoredDraft.prompt.length),
+        prompt: restoredDraft.prompt,
+      });
+      scheduleComposerFocus();
+    },
+  );
+
   const restoreRevertedComposerDraft = useCallback(
     (messageId: MessageId) => {
       if (!activeThread) {
@@ -2352,38 +2384,10 @@ export default function ChatView(props: ChatViewProps) {
         if (routeThreadKeyRef.current !== expectedRouteThreadKey) {
           return;
         }
-
-        const restoredImages = hydrateComposerImagesFromPersistedAttachments(
-          restoredDraft.attachments,
-        );
-        promptRef.current = restoredDraft.prompt;
-        composerImagesRef.current = restoredImages;
-        composerTerminalContextsRef.current = restoredDraft.terminalContexts;
-        clearComposerDraftContent(composerDraftTarget);
-        setComposerDraftPrompt(composerDraftTarget, restoredDraft.prompt);
-        if (restoredImages.length > 0) {
-          addComposerDraftImages(composerDraftTarget, restoredImages);
-        }
-        setComposerDraftTerminalContexts(composerDraftTarget, restoredDraft.terminalContexts);
-        composerRef.current?.resetCursorState({
-          cursor: collapseExpandedComposerCursor(restoredDraft.prompt, restoredDraft.prompt.length),
-          prompt: restoredDraft.prompt,
-        });
-        scheduleComposerFocus();
+        applyRestoredComposerDraft(restoredDraft);
       }, 300);
     },
-    [
-      activeThread,
-      addComposerDraftImages,
-      clearComposerDraftContent,
-      composerDraftTarget,
-      revertComposerDraftByMessageId,
-      routeThreadKey,
-      scheduleComposerFocus,
-      setComposerDraftPrompt,
-      setComposerDraftTerminalContexts,
-      timelineMessages,
-    ],
+    [activeThread, revertComposerDraftByMessageId, routeThreadKey, timelineMessages],
   );
 
   const onRevertToTurnCount = useCallback(

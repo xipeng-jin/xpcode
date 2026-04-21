@@ -242,9 +242,7 @@ describe("upsertRevertComposerDraftSnapshot", () => {
       terminalContexts: [],
     });
 
-    expect(() =>
-      Schema.decodeSync(RevertComposerDraftByMessageIdSchema)(snapshots),
-    ).not.toThrow();
+    expect(() => Schema.decodeSync(RevertComposerDraftByMessageIdSchema)(snapshots)).not.toThrow();
     expect(REVERT_COMPOSER_DRAFT_BY_MESSAGE_ID_KEY).toBe(
       "t3code:revert-composer-draft-by-message-id",
     );
