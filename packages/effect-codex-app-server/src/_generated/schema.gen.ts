@@ -1949,6 +1949,7 @@ export type ServerNotification__PlanType =
   | "go"
   | "plus"
   | "pro"
+  | "prolite"
   | "team"
   | "self_serve_business_usage_based"
   | "business"
@@ -1961,6 +1962,7 @@ export const ServerNotification__PlanType = Schema.Literals([
   "go",
   "plus",
   "pro",
+  "prolite",
   "team",
   "self_serve_business_usage_based",
   "business",
@@ -2619,6 +2621,7 @@ export type V2AccountRateLimitsUpdatedNotification__PlanType =
   | "go"
   | "plus"
   | "pro"
+  | "prolite"
   | "team"
   | "self_serve_business_usage_based"
   | "business"
@@ -2631,6 +2634,7 @@ export const V2AccountRateLimitsUpdatedNotification__PlanType = Schema.Literals(
   "go",
   "plus",
   "pro",
+  "prolite",
   "team",
   "self_serve_business_usage_based",
   "business",
@@ -2667,6 +2671,7 @@ export type V2AccountUpdatedNotification__PlanType =
   | "go"
   | "plus"
   | "pro"
+  | "prolite"
   | "team"
   | "self_serve_business_usage_based"
   | "business"
@@ -2679,6 +2684,7 @@ export const V2AccountUpdatedNotification__PlanType = Schema.Literals([
   "go",
   "plus",
   "pro",
+  "prolite",
   "team",
   "self_serve_business_usage_based",
   "business",
@@ -3143,6 +3149,7 @@ export type V2GetAccountRateLimitsResponse__PlanType =
   | "go"
   | "plus"
   | "pro"
+  | "prolite"
   | "team"
   | "self_serve_business_usage_based"
   | "business"
@@ -3155,6 +3162,7 @@ export const V2GetAccountRateLimitsResponse__PlanType = Schema.Literals([
   "go",
   "plus",
   "pro",
+  "prolite",
   "team",
   "self_serve_business_usage_based",
   "business",
@@ -3184,6 +3192,7 @@ export type V2GetAccountResponse__PlanType =
   | "go"
   | "plus"
   | "pro"
+  | "prolite"
   | "team"
   | "self_serve_business_usage_based"
   | "business"
@@ -3196,6 +3205,7 @@ export const V2GetAccountResponse__PlanType = Schema.Literals([
   "go",
   "plus",
   "pro",
+  "prolite",
   "team",
   "self_serve_business_usage_based",
   "business",

@@ -262,6 +262,30 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
         }),
       );
 
+      it.effect("returns a Pro Lite label for prolite chatgpt auth", () =>
+        Effect.gen(function* () {
+          const status = yield* checkCodexProviderStatus(() =>
+            Effect.succeed(
+              makeCodexProbeSnapshot({
+                account: {
+                  account: {
+                    type: "chatgpt",
+                    email: "prolite@example.com",
+                    planType: "prolite",
+                  },
+                  requiresOpenaiAuth: false,
+                },
+              }),
+            ),
+          );
+
+          assert.strictEqual(status.status, "ready");
+          assert.strictEqual(status.auth.status, "authenticated");
+          assert.strictEqual(status.auth.type, "chatgpt");
+          assert.strictEqual(status.auth.label, "ChatGPT Pro Lite Subscription");
+        }),
+      );
+
       it.effect("returns unavailable when codex is missing", () =>
         Effect.gen(function* () {
           const status = yield* checkCodexProviderStatus(() =>

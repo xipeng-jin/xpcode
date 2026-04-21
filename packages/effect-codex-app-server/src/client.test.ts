@@ -1,7 +1,9 @@
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Effect from "effect/Effect";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
@@ -10,10 +12,12 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 
 import * as CodexClient from "./client.ts";
+import { makeInMemoryStdio } from "./_internal/stdio.ts";
 
 const mockPeerPath = Effect.map(Effect.service(Path.Path), (path) =>
   path.join(import.meta.dirname, "../test/fixtures/codex-app-server-mock-peer.ts"),
 );
+const encoder = new TextEncoder();
 
 it.layer(NodeServices.layer)("effect-codex-app-server client", (it) => {
   const makeHandle = () =>
@@ -150,5 +154,45 @@ it.layer(NodeServices.layer)("effect-codex-app-server client", (it) => {
 
       assert.equal(initialized.userAgent, "mock-codex-app-server");
     }),
+  );
+
+  it.effect("decodes prolite account/read responses", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { stdio, input, output } = yield* makeInMemoryStdio();
+        const client = yield* CodexClient.make(stdio);
+        const pendingAccount = yield* client.request("account/read", {}).pipe(Effect.forkScoped);
+
+        assert.deepEqual(JSON.parse(yield* Queue.take(output)), {
+          id: 1,
+          method: "account/read",
+          params: {},
+        });
+
+        yield* Queue.offer(
+          input,
+          encoder.encode(
+            `${JSON.stringify({
+              id: 1,
+              result: {
+                account: {
+                  type: "chatgpt",
+                  email: "prolite@example.com",
+                  planType: "prolite",
+                },
+                requiresOpenaiAuth: false,
+              },
+            })}\n`,
+          ),
+        );
+
+        const account = yield* Fiber.join(pendingAccount);
+        assert.deepEqual(account.account, {
+          type: "chatgpt",
+          email: "prolite@example.com",
+          planType: "prolite",
+        });
+      }),
+    ),
   );
 });
