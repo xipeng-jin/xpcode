@@ -77,7 +77,10 @@ import {
 import { isArm64HostRunningIntelBuild, resolveDesktopRuntimeInfo } from "./runtimeArch.ts";
 import { resolveDesktopAppBranding } from "./appBranding.ts";
 import { bindFirstRevealTrigger, type RevealSubscription } from "./windowReveal.ts";
-import { applyLinuxPasswordStoreSwitch, resolveDesktopSecretStorageStatus } from "./secretStorage.ts";
+import {
+  applyLinuxPasswordStoreSwitch,
+  resolveDesktopSecretStorageStatus,
+} from "./secretStorage.ts";
 
 syncShellEnvironment();
 
