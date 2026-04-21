@@ -5,6 +5,7 @@ import {
   EnvironmentId,
   EventId,
   MessageId,
+  type OrchestrationShellSnapshot,
   ProjectId,
   ThreadId,
   TurnId,
@@ -20,6 +21,7 @@ import {
   selectThreadByRef,
   selectThreadExistsByRef,
   setThreadBranch,
+  syncServerShellSnapshot,
   selectThreadsAcrossEnvironments,
   type AppState,
   type EnvironmentState,
@@ -244,6 +246,102 @@ function makeEvent<T extends OrchestrationEvent["type"]>(
     ...overrides,
   } as Extract<OrchestrationEvent, { type: T }>;
 }
+
+function makeShellSnapshot(
+  overrides: Partial<OrchestrationShellSnapshot["threads"][number]> = {},
+): OrchestrationShellSnapshot {
+  const threadId = ThreadId.make("thread-1");
+  const projectId = ProjectId.make("project-1");
+
+  return {
+    snapshotSequence: 1,
+    updatedAt: "2026-02-27T00:00:00.000Z",
+    projects: [
+      {
+        id: projectId,
+        title: "Project",
+        workspaceRoot: "/tmp/project",
+        defaultModelSelection: {
+          provider: "codex",
+          model: "gpt-5-codex",
+        },
+        scripts: [],
+        createdAt: "2026-02-27T00:00:00.000Z",
+        updatedAt: "2026-02-27T00:00:00.000Z",
+      },
+    ],
+    threads: [
+      {
+        id: threadId,
+        projectId,
+        title: "Thread",
+        modelSelection: {
+          provider: "codex",
+          model: "gpt-5-codex",
+        },
+        runtimeMode: DEFAULT_RUNTIME_MODE,
+        interactionMode: DEFAULT_INTERACTION_MODE,
+        branch: null,
+        worktreePath: null,
+        latestTurn: null,
+        createdAt: "2026-02-27T00:00:00.000Z",
+        updatedAt: "2026-02-27T00:00:00.000Z",
+        archivedAt: null,
+        session: null,
+        latestUserMessageAt: null,
+        hasPendingApprovals: false,
+        hasPendingUserInput: false,
+        hasActionableProposedPlan: false,
+        ...overrides,
+      },
+    ],
+  };
+}
+
+describe("shell snapshot sync", () => {
+  it("captures the sidebar provider from the thread model selection", () => {
+    const next = syncServerShellSnapshot(
+      makeEmptyState(),
+      makeShellSnapshot({
+        modelSelection: {
+          provider: "claudeAgent",
+          model: "claude-opus-4-6",
+        },
+      }),
+      localEnvironmentId,
+    );
+
+    expect(
+      environmentStateOf(next, localEnvironmentId).sidebarThreadSummaryById[
+        ThreadId.make("thread-1")
+      ]?.provider,
+    ).toBe("claudeAgent");
+  });
+
+  it("resolves claude aliases for shell snapshot thread models", () => {
+    const next = syncServerShellSnapshot(
+      makeEmptyState(),
+      makeShellSnapshot({
+        modelSelection: {
+          provider: "claudeAgent",
+          model: "sonnet",
+        },
+        session: {
+          threadId: ThreadId.make("thread-1"),
+          status: "ready",
+          providerName: "claudeAgent",
+          runtimeMode: "approval-required",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: "2026-02-27T00:00:00.000Z",
+        },
+      }),
+      localEnvironmentId,
+    );
+
+    expect(threadsOf(next)[0]?.modelSelection.model).toBe("claude-sonnet-4-6");
+  });
+});
 
 describe("thread selection memoization", () => {
   it("returns stable thread references for repeated reads of the same state", () => {

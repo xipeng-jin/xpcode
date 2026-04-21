@@ -40,6 +40,8 @@ import {
   type ContextMenuItem,
   type DesktopUpdateState,
   ProjectId,
+  type ProviderKind,
+  PROVIDER_DISPLAY_NAMES,
   type ScopedThreadRef,
   type SidebarProjectGroupingMode,
   type ThreadEnvMode,
@@ -184,6 +186,7 @@ import {
   type SidebarProjectGroupMember,
   type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
+import { PROVIDER_ICON_BY_KIND, providerIconClassName } from "../providerPresentation";
 const THREAD_PREVIEW_LIMIT = 6;
 const SIDEBAR_SORT_LABELS: Record<SidebarProjectSortOrder, string> = {
   updated_at: "Last user message",
@@ -255,6 +258,26 @@ function buildThreadJumpLabelMap(input: {
     }
   }
   return mapping.size > 0 ? mapping : EMPTY_THREAD_JUMP_LABELS;
+}
+
+function ThreadProviderIcon(props: { provider: ProviderKind; threadId: ThreadId }) {
+  const ProviderIcon = PROVIDER_ICON_BY_KIND[props.provider];
+  const label = `${PROVIDER_DISPLAY_NAMES[props.provider]} thread`;
+
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      data-testid={`thread-provider-icon-${props.threadId}`}
+      className="inline-flex size-3 shrink-0 items-center justify-center"
+    >
+      <ProviderIcon
+        aria-hidden="true"
+        className={`size-3 ${providerIconClassName(props.provider, "text-muted-foreground/70")}`}
+      />
+    </span>
+  );
 }
 
 interface SidebarThreadRowProps {
@@ -565,6 +588,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             </Tooltip>
           )}
           {threadStatus && <ThreadStatusLabel status={threadStatus} />}
+          <ThreadProviderIcon provider={thread.provider} threadId={thread.id} />
           {renamingThreadKey === threadKey ? (
             <input
               ref={handleRenameInputRef}

@@ -61,6 +61,7 @@ function makeSidebarThreadSummary(
     Pick<SidebarThreadSummary, "id" | "environmentId" | "projectId" | "title">,
 ): SidebarThreadSummary {
   return {
+    provider: "codex",
     interactionMode: DEFAULT_INTERACTION_MODE,
     session: null,
     createdAt: "2026-01-01T00:00:00.000Z",

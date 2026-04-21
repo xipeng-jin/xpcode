@@ -285,6 +285,7 @@ function mapThreadShell(
     environmentId,
     projectId: thread.projectId,
     title: thread.title,
+    provider: thread.modelSelection.provider,
     interactionMode: thread.interactionMode,
     session,
     createdAt: thread.createdAt,
@@ -386,6 +387,7 @@ function sidebarThreadSummariesEqual(
     left.id === right.id &&
     left.projectId === right.projectId &&
     left.title === right.title &&
+    left.provider === right.provider &&
     left.interactionMode === right.interactionMode &&
     threadSessionsEqual(left.session, right.session) &&
     left.createdAt === right.createdAt &&
