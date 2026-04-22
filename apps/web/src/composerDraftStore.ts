@@ -1780,6 +1780,12 @@ function hydrateImagesFromPersisted(
   });
 }
 
+export function hydrateComposerImagesFromPersistedAttachments(
+  attachments: ReadonlyArray<PersistedComposerImageAttachment>,
+): ComposerImageAttachment[] {
+  return hydrateImagesFromPersisted(attachments);
+}
+
 function toHydratedThreadDraft(
   persistedDraft: PersistedComposerThreadDraftState,
 ): ComposerThreadDraftState {

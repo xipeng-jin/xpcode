@@ -8,6 +8,7 @@ import {
   countInlineTerminalContextPlaceholders,
   deriveDisplayedUserMessageState,
   ensureInlineTerminalContextPlaceholders,
+  extractTrailingTerminalContextSelections,
   extractTrailingTerminalContexts,
   filterTerminalContextsWithText,
   formatInlineTerminalContextLabel,
@@ -120,6 +121,22 @@ describe("terminalContext", () => {
         {
           header: "Terminal 1 lines 12-13",
           body: "12 | git status\n13 | On branch main",
+        },
+      ],
+    });
+  });
+
+  it("reconstructs terminal context selections from message text", () => {
+    const prompt = appendTerminalContextsToPrompt("Investigate this", [makeContext()]);
+    expect(extractTrailingTerminalContextSelections(prompt)).toEqual({
+      promptText: "Investigate this",
+      contexts: [
+        {
+          terminalId: "terminal-1",
+          terminalLabel: "Terminal 1",
+          lineStart: 12,
+          lineEnd: 13,
+          text: "git status\nOn branch main",
         },
       ],
     });

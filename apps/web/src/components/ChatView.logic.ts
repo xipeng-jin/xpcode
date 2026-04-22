@@ -1,17 +1,23 @@
 import {
   type EnvironmentId,
+  type MessageId,
   ProjectId,
   type ModelSelection,
   type ProviderKind,
   type ScopedThreadRef,
-  type ThreadId,
+  ThreadId,
   type TurnId,
 } from "@t3tools/contracts";
 import { type ChatMessage, type SessionPhase, type Thread, type ThreadSession } from "../types";
-import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
+import {
+  PersistedComposerImageAttachment as PersistedComposerImageAttachmentSchema,
+  type ComposerImageAttachment,
+  type DraftThreadState,
+} from "../composerDraftStore";
 import { Schema } from "effect";
 import { selectThreadByRef, useStore } from "../store";
 import {
+  extractTrailingTerminalContextSelections,
   filterTerminalContextsWithText,
   stripInlineTerminalContextPlaceholders,
   type TerminalContextDraft,
@@ -19,9 +25,94 @@ import {
 import type { DraftThreadEnvMode } from "../composerDraftStore";
 
 export const LAST_INVOKED_SCRIPT_BY_PROJECT_KEY = "t3code:last-invoked-script-by-project";
+export const REVERT_COMPOSER_DRAFT_BY_MESSAGE_ID_KEY = "t3code:revert-composer-draft-by-message-id";
 export const MAX_HIDDEN_MOUNTED_TERMINAL_THREADS = 10;
 
 export const LastInvokedScriptByProjectSchema = Schema.Record(ProjectId, Schema.String);
+const MAX_REVERT_COMPOSER_DRAFT_ENTRIES = 200;
+const RevertComposerDraftTerminalContextSchema = Schema.Struct({
+  id: Schema.String,
+  threadId: ThreadId,
+  createdAt: Schema.String,
+  terminalId: Schema.String,
+  terminalLabel: Schema.String,
+  lineStart: Schema.Number,
+  lineEnd: Schema.Number,
+  text: Schema.String,
+});
+const RevertComposerDraftSchema = Schema.Struct({
+  prompt: Schema.String,
+  attachments: Schema.Array(PersistedComposerImageAttachmentSchema),
+  terminalContexts: Schema.Array(RevertComposerDraftTerminalContextSchema),
+});
+export type RevertComposerDraft = typeof RevertComposerDraftSchema.Type;
+export const RevertComposerDraftByMessageIdSchema = Schema.Record(
+  Schema.String,
+  RevertComposerDraftSchema,
+);
+
+export function upsertRevertComposerDraftSnapshot(
+  snapshots: Record<string, RevertComposerDraft>,
+  messageId: MessageId,
+  draft: RevertComposerDraft,
+): Record<string, RevertComposerDraft> {
+  const nextSnapshots = { ...snapshots };
+  delete nextSnapshots[messageId];
+  nextSnapshots[messageId] = draft;
+
+  const snapshotEntries = Object.entries(nextSnapshots);
+  if (snapshotEntries.length <= MAX_REVERT_COMPOSER_DRAFT_ENTRIES) {
+    return nextSnapshots;
+  }
+
+  return Object.fromEntries(snapshotEntries.slice(-MAX_REVERT_COMPOSER_DRAFT_ENTRIES));
+}
+
+export function deriveRestorableComposerDraft(input: {
+  message: ChatMessage;
+  savedDraft: RevertComposerDraft | null | undefined;
+  currentThreadId: ThreadId;
+  imageOnlyBootstrapPrompt: string;
+}): RevertComposerDraft {
+  if (input.savedDraft) {
+    return {
+      prompt: input.savedDraft.prompt,
+      attachments: input.savedDraft.attachments,
+      terminalContexts: input.savedDraft.terminalContexts.map((context) => ({
+        id: context.id,
+        threadId: input.currentThreadId,
+        createdAt: context.createdAt,
+        terminalId: context.terminalId,
+        terminalLabel: context.terminalLabel,
+        lineStart: context.lineStart,
+        lineEnd: context.lineEnd,
+        text: context.text,
+      })),
+    };
+  }
+
+  const extractedContexts = extractTrailingTerminalContextSelections(input.message.text);
+  const prompt =
+    (input.message.attachments?.length ?? 0) > 0 &&
+    extractedContexts.promptText === input.imageOnlyBootstrapPrompt
+      ? ""
+      : extractedContexts.promptText;
+
+  return {
+    prompt,
+    attachments: [],
+    terminalContexts: extractedContexts.contexts.map((context, index) => ({
+      id: `restored-${input.message.id}-${index}`,
+      threadId: input.currentThreadId,
+      createdAt: input.message.createdAt,
+      terminalId: context.terminalId,
+      terminalLabel: context.terminalLabel,
+      lineStart: context.lineStart,
+      lineEnd: context.lineEnd,
+      text: context.text,
+    })),
+  };
+}
 
 export function buildLocalDraftThread(
   threadId: ThreadId,
